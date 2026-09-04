@@ -1,5 +1,4 @@
-
-(()=> {
+(()=>{
 'use strict';
 
 if(window.__WEBTOOLS){
@@ -56,6 +55,11 @@ const css=`
   --wt-accent-soft:#6f93f21c;
   --wt-radius:16px;
   --wt-safe-b:env(safe-area-inset-bottom,0px);
+  --wt-syn-tag:#ff7b72;
+  --wt-syn-attr:#d2a8ff;
+  --wt-syn-string:#a5d6ff;
+  --wt-syn-punct:#8b949e;
+  --wt-syn-comment:#8b949e;
 }
 
 #wt-app{
@@ -417,6 +421,66 @@ const css=`
   line-height:1.55;
 }
 
+.wt-badge{
+  display:inline-block;
+  font-size:9px;
+  font-weight:700;
+  padding:2px 7px;
+  border-radius:99px;
+  background:#ffffff0d;
+  border:1px solid var(--wt-border-soft);
+  color:var(--wt-text-dim);
+  margin-left:5px;
+  text-transform:uppercase;
+  letter-spacing:.03em;
+  white-space:nowrap;
+}
+.wt-badge-accent{
+  color:var(--wt-accent);
+  border-color:#6f93f240;
+  background:#6f93f214;
+}
+.wt-badge-warn{
+  color:#f0b429;
+  border-color:#f0b42940;
+  background:#f0b42914;
+}
+
+.wt-code-wrap{
+  position:relative;
+  max-height:58vh;
+  overflow:auto;
+  background:#0a0c10;
+  border:1px solid var(--wt-border-soft);
+  border-radius:12px;
+}
+.wt-code-toolbar{
+  position:sticky;
+  top:0;
+  z-index:2;
+  display:flex;
+  justify-content:flex-end;
+  padding:8px 10px;
+  background:#0a0c10ee;
+  backdrop-filter:blur(6px);
+  border-bottom:1px solid var(--wt-border-soft);
+}
+.wt-code-toolbar .wt-copy{float:none}
+.wt-code{
+  margin:0;
+  padding:14px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  font-size:11.5px;
+  line-height:1.65;
+  color:#c9d1d9;
+  white-space:pre;
+}
+.wt-c-tag{color:var(--wt-syn-tag)}
+.wt-c-attr{color:var(--wt-syn-attr)}
+.wt-c-string{color:var(--wt-syn-string)}
+.wt-c-punct{color:var(--wt-syn-punct)}
+.wt-c-comment{color:var(--wt-syn-comment);font-style:italic}
+
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-thumb{background:#ffffff22;border-radius:99px}
 
@@ -575,9 +639,73 @@ const bindCopies=()=>{
     b.onclick=async()=>{
       const ok=await copy(b.dataset.copy);
       b.textContent=ok?'Copied':'Failed';
-      setTimeout(()=>b.textContent='Copy',1200);
+      setTimeout(()=>b.textContent=b.dataset.copy&&b.closest('.wt-code-toolbar')?'Copy HTML':'Copy',1200);
     };
   });
+};
+
+/* =========================================================
+   LIGHTWEIGHT HTML SYNTAX HIGHLIGHTER
+   (regex-based tokenizer, no external library, output is
+   fully escaped before being wrapped in color spans)
+   ========================================================= */
+
+const highlightAttrs=attrsPart=>{
+  let out='';
+  let last=0;
+  const attrRe=/([a-zA-Z_:][-a-zA-Z0-9_:.]*)(\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g;
+  let am;
+
+  while((am=attrRe.exec(attrsPart))){
+    out+=esc(attrsPart.slice(last,am.index));
+    out+=`<span class="wt-c-attr">${esc(am[1])}</span>`;
+
+    if(am[3]!==undefined){
+      out+=`<span class="wt-c-punct">=</span><span class="wt-c-string">${esc(am[3])}</span>`;
+    }
+
+    last=attrRe.lastIndex;
+  }
+
+  out+=esc(attrsPart.slice(last));
+  return out;
+};
+
+const highlightTag=tag=>{
+  const isClose=tag.startsWith('</');
+  const open=isClose?'</':'<';
+  const selfClose=tag.endsWith('/>');
+  const closer=selfClose?'/>':'>';
+  const inner=tag.slice(open.length,tag.length-closer.length);
+  const nameMatch=inner.match(/^[a-zA-Z][a-zA-Z0-9:-]*/);
+  const name=nameMatch?nameMatch[0]:'';
+  const attrsPart=inner.slice(name.length);
+
+  return `<span class="wt-c-punct">${esc(open)}</span>`+
+    `<span class="wt-c-tag">${esc(name)}</span>`+
+    highlightAttrs(attrsPart)+
+    `<span class="wt-c-punct">${esc(closer)}</span>`;
+};
+
+const highlightHTML=html=>{
+  const re=/<!--[\s\S]*?-->|<\/?[a-zA-Z][^>]*>/g;
+  let out='';
+  let last=0;
+  let m;
+
+  while((m=re.exec(html))){
+    out+=esc(html.slice(last,m.index));
+    const tok=m[0];
+
+    out+=tok.startsWith('<!--')
+      ?`<span class="wt-c-comment">${esc(tok)}</span>`
+      :highlightTag(tok);
+
+    last=re.lastIndex;
+  }
+
+  out+=esc(html.slice(last));
+  return out;
 };
 
 /* =========================================================
@@ -804,8 +932,6 @@ const resourceName=(url,fallback='resource')=>{
 };
 
 const uniquePath=(path,used)=>{
-  const original=path;
-
   if(!used.has(path)){
     used.add(path);
     return path;
@@ -829,11 +955,7 @@ const isFetchableURL=url=>{
   try{
     const u=new URL(url,location.href);
 
-    if(!/^https?:$/i.test(u.protocol)&&u.protocol!=='blob:'){
-      return false;
-    }
-
-    if(u.protocol==='blob:'){
+    if(!/^https?:$/i.test(u.protocol)){
       return false;
     }
 
@@ -859,9 +981,7 @@ const fetchResource=async(url,timeout=12000)=>{
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const type=response.type;
-
-    if(type==='opaque'){
+    if(response.type==='opaque'){
       throw new Error('Opaque response');
     }
 
@@ -893,11 +1013,7 @@ const collectFrontendResources=()=>{
 
       seen.add(key);
 
-      list.push({
-        url:key,
-        type,
-        element
-      });
+      list.push({url:key,type,element});
     }catch{}
   };
 
@@ -942,18 +1058,12 @@ const collectFrontendResources=()=>{
     if(href){
       const lower=href.toLowerCase();
 
-      if(
-        /\.(woff2?|ttf|otf|eot|svg|png|jpe?g|gif|webp|avif|ico|mp4|webm|mp3|wav)(\?|#|$)/i.test(lower)
-      ){
+      if(/\.(woff2?|ttf|otf|eot|svg|png|jpe?g|gif|webp|avif|ico|mp4|webm|mp3|wav)(\?|#|$)/i.test(lower)){
         add(href,'asset',el);
       }
     }
   });
 
-  /*
-   * Performance entries provide additional browser-visible resources.
-   * Only fetchable HTTP(S) resources are considered.
-   */
   try{
     performance.getEntriesByType('resource').forEach(entry=>{
       const name=entry&&entry.name;
@@ -976,16 +1086,8 @@ const collectFrontendResources=()=>{
 const sanitizeExportDocument=()=>{
   const clone=document.documentElement.cloneNode(true);
 
-  /*
-   * Never export the Web Tools UI itself.
-   */
   clone.querySelectorAll('#wt-app,#wt-modal,#wt-style').forEach(el=>el.remove());
 
-  /*
-   * Do not export live form values. This prevents passwords, entered
-   * credentials, search terms, payment details and other user input
-   * from being silently placed into the ZIP.
-   */
   clone.querySelectorAll('input,textarea,select').forEach(el=>{
     try{
       if(el.tagName==='INPUT'){
@@ -1011,7 +1113,6 @@ const sanitizeExportDocument=()=>{
 
 const pathForResource=(resource,used)=>{
   const name=resourceName(resource.url,'resource');
-
   let folder='assets';
 
   if(resource.type==='css')folder='css';
@@ -1032,51 +1133,30 @@ const rewriteHTMLResourceReferences=(doc,mapping)=>{
 
   doc.querySelectorAll('link[href]').forEach(el=>{
     const original=el.getAttribute('href');
-
     if(!original)return;
-
     const replaced=rewrite(original);
-
-    if(replaced!==original){
-      el.setAttribute('href',replaced);
-    }
+    if(replaced!==original)el.setAttribute('href',replaced);
   });
 
   doc.querySelectorAll('script[src]').forEach(el=>{
     const original=el.getAttribute('src');
-
     if(!original)return;
-
     const replaced=rewrite(original);
-
-    if(replaced!==original){
-      el.setAttribute('src',replaced);
-    }
+    if(replaced!==original)el.setAttribute('src',replaced);
   });
 
   doc.querySelectorAll('img[src],source[src],video[src],audio[src],iframe[src]').forEach(el=>{
-    const attr='src';
-    const original=el.getAttribute(attr);
-
+    const original=el.getAttribute('src');
     if(!original)return;
-
     const replaced=rewrite(original);
-
-    if(replaced!==original){
-      el.setAttribute(attr,replaced);
-    }
+    if(replaced!==original)el.setAttribute('src',replaced);
   });
 
   doc.querySelectorAll('[poster]').forEach(el=>{
     const original=el.getAttribute('poster');
-
     if(!original)return;
-
     const replaced=rewrite(original);
-
-    if(replaced!==original){
-      el.setAttribute('poster',replaced);
-    }
+    if(replaced!==original)el.setAttribute('poster',replaced);
   });
 
   doc.querySelectorAll('[srcset]').forEach(el=>{
@@ -1084,11 +1164,8 @@ const rewriteHTMLResourceReferences=(doc,mapping)=>{
 
     const replaced=original.split(',').map(part=>{
       const bits=part.trim().split(/\s+/);
-
       if(!bits[0])return part;
-
       bits[0]=rewrite(bits[0]);
-
       return bits.join(' ');
     }).join(', ');
 
@@ -1102,22 +1179,14 @@ const rewriteCSSReferences=(cssText,cssURL,mapping)=>{
     (full,quote,value)=>{
       const raw=value.trim();
 
-      if(
-        !raw||
-        raw.startsWith('data:')||
-        raw.startsWith('#')||
-        raw.startsWith('blob:')
-      ){
+      if(!raw||raw.startsWith('data:')||raw.startsWith('#')||raw.startsWith('blob:')){
         return full;
       }
 
       try{
         const absolute=new URL(raw,cssURL).href;
         const mapped=mapping.get(absolute);
-
-        if(mapped){
-          return `url("${mapped}")`;
-        }
+        if(mapped)return `url("${mapped}")`;
       }catch{}
 
       return full;
@@ -1190,10 +1259,6 @@ const exportFrontendZIP=async()=>{
 
     const resources=collectFrontendResources();
 
-    /*
-     * Only resources actually discovered from the current page are considered.
-     * Nothing is guessed from server directories.
-     */
     for(let i=0;i<resources.length;i++){
       const resource=resources[i];
 
@@ -1203,11 +1268,6 @@ const exportFrontendZIP=async()=>{
           continue;
         }
 
-        /*
-         * The exporter intentionally avoids automatically fetching
-         * cross-origin resources. Browser CORS rules can otherwise make
-         * behavior inconsistent and may expose authenticated content.
-         */
         const resourceURL=new URL(resource.url);
 
         if(resourceURL.origin!==location.origin){
@@ -1216,12 +1276,7 @@ const exportFrontendZIP=async()=>{
         }
 
         const path=pathForResource(resource,used);
-
-        resourceResults.push({
-          resource,
-          path
-        });
-
+        resourceResults.push({resource,path});
         mapping.set(resourceURL.href,path);
       }catch{
         skipped++;
@@ -1230,45 +1285,27 @@ const exportFrontendZIP=async()=>{
 
     const entries=[];
 
-    /*
-     * Fetching is deliberately fault-tolerant: each resource has its own
-     * try/catch so a single failure cannot abort the export.
-     */
     for(const item of resourceResults){
       const resource=item.resource;
 
       try{
         const fetched=await fetchResource(resource.url);
-
         let data=new Uint8Array(fetched.buffer);
 
-        /*
-         * CSS references are rewritten after the resource map is known.
-         * This keeps local exported CSS assets useful when possible.
-         */
         if(resource.type==='css'){
           const text=new TextDecoder().decode(data);
-          const rewritten=rewriteCSSReferences(
-            text,
-            resource.url,
-            mapping
-          );
-
+          const rewritten=rewriteCSSReferences(text,resource.url,mapping);
           data=makeTextBytes(rewritten);
         }
 
-        entries.push({
-          name:item.path,
-          data
-        });
+        entries.push({name:item.path,data});
       }catch{
         skipped++;
       }
 
       completed++;
 
-      const progress=15+
-        Math.round((completed/Math.max(resourceResults.length,1))*55);
+      const progress=15+Math.round((completed/Math.max(resourceResults.length,1))*55);
 
       setModalStatus(
         progressModal,
@@ -1281,41 +1318,26 @@ const exportFrontendZIP=async()=>{
 
     rewriteHTMLResourceReferences(exportDocument,mapping);
 
-    /*
-     * Serialize only the sanitized current DOM.
-     * No cookies, storage values or live form values are included.
-     */
     const html='<!DOCTYPE html>\n'+exportDocument.outerHTML;
 
-    entries.unshift({
-      name:'index.html',
-      data:makeTextBytes(html)
-    });
+    entries.unshift({name:'index.html',data:makeTextBytes(html)});
 
     let zipBlob;
 
-    /*
-     * Prefer JSZip when it is already available or can be loaded.
-     * Failure falls back to the built-in valid ZIP writer.
-     */
     try{
       let JSZip=window.JSZip;
 
       if(!JSZip){
         try{
-          JSZip=await loadScriptOnce(
-            'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
-          );
+          JSZip=await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
         }catch{
           JSZip=null;
         }
       }
 
-      if(JSZip){
-        zipBlob=await createZipWithJSZip(JSZip,entries);
-      }else{
-        zipBlob=makeStoredZip(entries);
-      }
+      zipBlob=JSZip
+        ?await createZipWithJSZip(JSZip,entries)
+        :makeStoredZip(entries);
     }catch{
       zipBlob=makeStoredZip(entries);
     }
@@ -1352,19 +1374,14 @@ const exportFrontendZIP=async()=>{
       );
     }
   }catch(e){
-    const message=e&&e.message
-      ?e.message
-      :'The frontend export could not be completed.';
-
+    const message=e&&e.message?e.message:'The frontend export could not be completed.';
     const content=progressModal.querySelector('#wt-content');
 
     if(content){
       content.innerHTML=`
         <div class="wt-card">
           <div class="wt-label">Export failed</div>
-          <div class="wt-value">
-            ${esc(message)}
-          </div>
+          <div class="wt-value">${esc(message)}</div>
         </div>
         <div class="wt-card">
           <div class="wt-note">
@@ -1390,76 +1407,20 @@ addTool(
    ========================================================= */
 
 const downloadPagePDF=()=>{
-  const printStyle=document.createElement('style');
-  printStyle.id='wt-print-temp';
-
-  printStyle.textContent=`
-    @media print{
-      #wt-app,
-      #wt-modal,
-      #wt-style,
-      [data-wt-print-hide]{
-        display:none!important;
-      }
-
-      html,body{
-        background:#fff!important;
-      }
-    }
-  `;
-
-  let restored=false;
-
-  const cleanup=()=>{
-    if(restored)return;
-
-    restored=true;
-
-    try{
-      printStyle.remove();
-    }catch{}
-
-    try{
-      window.removeEventListener('afterprint',cleanup);
-    }catch{}
-  };
-
   try{
-    document.head.appendChild(printStyle);
-
-    root.style.display='none';
+    panel.style.display='none';
 
     const currentModal=document.getElementById('wt-modal');
-
-    if(currentModal){
-      currentModal.style.display='none';
-    }
-
-    window.addEventListener('afterprint',cleanup,{once:true});
+    if(currentModal)currentModal.remove();
 
     /*
-     * This is intentionally a print-to-PDF flow rather than a fake
-     * automatic PDF download. The browser controls the actual PDF
-     * destination and print dialog.
+     * The @media print rule in the main stylesheet already hides
+     * #wt-app and #wt-modal from the printed/PDF output, so no
+     * extra DOM manipulation is needed here — and nothing needs
+     * to be manually restored afterwards.
      */
     window.print();
-
-    /*
-     * Some browsers do not reliably fire afterprint for every print
-     * implementation. Give the event time to run, with a long safety
-     * fallback rather than immediately restoring the UI.
-     */
-    setTimeout(cleanup,60000);
   }catch{
-    cleanup();
-    root.style.display='';
-
-    const currentModal=document.getElementById('wt-modal');
-
-    if(currentModal){
-      currentModal.style.display='';
-    }
-
     modal(
       'Download Page as PDF',
       `<div class="wt-card">
@@ -1476,11 +1437,6 @@ addTool(
   'pdf','Download Page as PDF',
   'Save the current rendered page as a PDF',
   ()=>{
-    /*
-     * Native browser printing is the most reliable option available
-     * from an injected script. The browser's print dialog may ask the
-     * user to select "Save as PDF".
-     */
     downloadPagePDF();
   }
 );
@@ -1505,16 +1461,11 @@ addTool(
 
     const over=e=>{
       if(!active||root.contains(e.target)||e.target.closest('#wt-modal'))return;
-
-      try{
-        e.target.setAttribute('data-wt-highlight','');
-      }catch{}
+      try{e.target.setAttribute('data-wt-highlight','');}catch{}
     };
 
     const out=e=>{
-      try{
-        e.target.removeAttribute('data-wt-highlight');
-      }catch{}
+      try{e.target.removeAttribute('data-wt-highlight');}catch{}
     };
 
     const click=e=>{
@@ -1561,18 +1512,22 @@ addTool(
 );
 
 /* =========================================================
-   PAGE SOURCE
+   PAGE SOURCE — sticky copy toolbar + color-coded HTML
    ========================================================= */
 
 addTool(
   'source','Page Source',
-  'Open the current document HTML in a readable viewer',
+  'Open the current document HTML in a readable, color-coded viewer',
   ()=>{
+    const raw=document.documentElement.outerHTML;
+
     modal(
       'Document HTML',
-      `<div class="wt-card">
-        <button class="wt-copy" data-copy="${esc(document.documentElement.outerHTML)}">Copy HTML</button>
-        <pre style="white-space:pre-wrap;word-break:break-word;color:#cdd3dd;font-size:11px;line-height:1.5">${esc(document.documentElement.outerHTML)}</pre>
+      `<div class="wt-code-wrap">
+        <div class="wt-code-toolbar">
+          <button class="wt-copy" data-copy="${esc(raw)}">Copy HTML</button>
+        </div>
+        <pre class="wt-code"><code>${highlightHTML(raw)}</code></pre>
       </div>`
     );
 
@@ -1594,12 +1549,12 @@ addTool(
 );
 
 /* =========================================================
-   LINKS
+   LINKS — now shows internal/external + new-tab badges
    ========================================================= */
 
 addTool(
   'links','Links',
-  'List all links with clickable destinations',
+  'List all links, and mark internal vs external destinations',
   ()=>{
     const data=[...document.links];
 
@@ -1607,13 +1562,27 @@ addTool(
       'Links',
       data.length
       ? `<table class="wt-table">
-          <tr><th>#</th><th>Text</th><th>Destination</th></tr>
-          ${data.map((a,i)=>`
+          <tr><th>#</th><th>Text</th><th>Destination</th><th>Type</th></tr>
+          ${data.map((a,i)=>{
+            let internal=true;
+            try{internal=new URL(a.href).origin===location.origin;}catch{}
+
+            const badge=internal
+              ?'<span class="wt-badge">Internal</span>'
+              :'<span class="wt-badge wt-badge-accent">External</span>';
+
+            const newTab=a.target==='_blank'
+              ?'<span class="wt-badge">New tab</span>'
+              :'';
+
+            return `
             <tr>
               <td>${i+1}</td>
               <td>${esc(a.innerText.trim()||'(no text)')}</td>
               <td>${urlHTML(a.href)}</td>
-            </tr>`).join('')}
+              <td>${badge}${newTab}</td>
+            </tr>`;
+          }).join('')}
         </table>`
       : empty('No links found.')
     );
@@ -1621,65 +1590,77 @@ addTool(
 );
 
 /* =========================================================
-   IMAGES
+   IMAGES — now flags missing alt text
    ========================================================= */
 
 addTool(
   'images','Images',
-  'View images with clickable source URLs',
+  'View images with source URLs and accessibility alt text',
   ()=>{
     const data=[...document.images];
 
     modal(
       'Images',
       data.length
-      ? data.map((img,i)=>`
+      ? data.map((img,i)=>{
+        const alt=img.getAttribute('alt');
+        const altHTML=alt
+          ?`<div class="wt-value">${esc(alt)}</div>`
+          :'<span class="wt-badge wt-badge-warn">Missing alt text</span>';
+
+        return `
         <div class="wt-card">
           <div class="wt-label">Image ${i+1}</div>
           <div class="wt-value">${urlHTML(img.src)}</div>
           <img class="wt-preview" src="${esc(img.src)}" loading="lazy">
           <div class="wt-label" style="margin-top:8px">Dimensions</div>
           <div class="wt-value">${img.naturalWidth||'?'} × ${img.naturalHeight||'?'}</div>
+          <div class="wt-label" style="margin-top:8px">Alt Text</div>
+          ${altHTML}
         </div>
-      `).join('')
+      `;}).join('')
       : empty('No images found.')
     );
   }
 );
 
 /* =========================================================
-   FORMS
+   FORMS — now shows required-field counts
    ========================================================= */
 
 addTool(
   'forms','Forms',
-  'Inspect forms, actions, methods and fields',
+  'Inspect forms, actions, methods and field details',
   ()=>{
     const data=[...document.forms];
 
     modal(
       'Forms',
       data.length
-      ? data.map((f,i)=>`
+      ? data.map((f,i)=>{
+        const required=[...f.elements].filter(e=>e.required).length;
+
+        return `
         <div class="wt-card">
           <div class="wt-label">Form ${i+1}</div>
           <div class="wt-value">
             <strong>Action:</strong> ${urlHTML(f.action)}<br>
             <strong>Method:</strong> ${esc(f.method||'get')}<br>
             <strong>Fields:</strong> ${f.elements.length}
+            ${required?`<span class="wt-badge wt-badge-accent">${required} required</span>`:''}
           </div>
           <br>
           <table class="wt-table">
             <tr><th>Name</th><th>Type</th><th>Tag</th></tr>
             ${[...f.elements].map(e=>`
               <tr>
-                <td>${esc(e.name||'(none)')}</td>
+                <td>${esc(e.name||'(none)')}${e.required?' <span class="wt-badge wt-badge-warn">Required</span>':''}</td>
                 <td>${esc(e.type||'(none)')}</td>
                 <td>${esc(e.tagName)}</td>
               </tr>`).join('')}
           </table>
         </div>
-      `).join('')
+      `;}).join('')
       : empty('No forms found.')
     );
   }
@@ -1824,8 +1805,7 @@ const storageViewer=(name,store)=>{
 };
 
 addTool(
-  'localStorage',
-  'Local Storage',
+  'localStorage','Local Storage',
   'View current site localStorage keys and values',
   ()=>storageViewer('Local Storage',localStorage)
 );
@@ -1835,8 +1815,7 @@ addTool(
    ========================================================= */
 
 addTool(
-  'sessionStorage',
-  'Session Storage',
+  'sessionStorage','Session Storage',
   'View current site sessionStorage keys and values',
   ()=>storageViewer('Session Storage',sessionStorage)
 );
@@ -1887,5 +1866,31 @@ root.querySelector('#wt-close').onclick=()=>{
   panel.style.display='none';
 };
 
-})();
+/*
+ * Clicking anywhere on the underlying page (outside the panel and
+ * outside any open modal) closes the panel automatically, so the
+ * floating tool never traps interaction with the site itself.
+ */
+document.addEventListener('click',e=>{
+  if(panel.style.display!=='block')return;
+  if(root.contains(e.target))return;
+  if(e.target.closest && e.target.closest('#wt-modal'))return;
+  panel.style.display='none';
+},true);
 
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape')return;
+
+  const openModal=document.getElementById('wt-modal');
+
+  if(openModal){
+    openModal.remove();
+    return;
+  }
+
+  if(panel.style.display==='block'){
+    panel.style.display='none';
+  }
+},true);
+
+})();
