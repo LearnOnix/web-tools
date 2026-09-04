@@ -1,4 +1,5 @@
-(()=>{
+
+(()=> {
 'use strict';
 
 if(window.__WEBTOOLS){
@@ -26,6 +27,8 @@ const ICONS={
   search:'<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
   close:'<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
   overview:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+  download:'<path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><path d="M5 21h14a2 2 0 0 0 2-2v-2"/><path d="M3 17v2a2 2 0 0 0 2 2"/>',
+  pdf:'<path d="M6 2h9l5 5v15H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><polyline points="14 2 14 8 20 8"/><path d="M8 15h2a2 2 0 0 0 0-4H8v7"/><path d="M13 11v7h1a3.5 3.5 0 0 0 0-7z"/><line x1="19" y1="11" x2="16" y2="11"/><line x1="16" y1="11" x2="16" y2="18"/>',
   links:'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
   images:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
   forms:'<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><polyline points="9 14 11 16 15 12"/>',
@@ -38,7 +41,7 @@ const ICONS={
   cookies:'<path d="M12 22s7-3.5 7-9V6l-7-3-7 3v7c0 5.5 7 9 7 9z"/>',
   copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   source:'<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
-  scripts:'<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>',
+  scripts:'<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>'
 };
 
 const css=`
@@ -84,8 +87,6 @@ const css=`
 #wt-launch:active{transform:scale(.96)}
 #wt-launch svg{opacity:.9}
 
-/* Panel is fixed to the VIEWPORT (not absolute to #wt-app) so it can never
-   overflow off-screen regardless of the launcher button's own width. */
 #wt-panel{
   display:none;
   position:fixed;
@@ -391,6 +392,31 @@ const css=`
   padding:24px 10px;
 }
 
+.wt-progress{
+  height:6px;
+  background:#ffffff0a;
+  border:1px solid var(--wt-border-soft);
+  border-radius:99px;
+  overflow:hidden;
+  margin-top:10px;
+}
+.wt-progress-bar{
+  width:0%;
+  height:100%;
+  background:var(--wt-accent);
+  transition:width .18s ease;
+}
+.wt-status{
+  color:var(--wt-text-dim);
+  font-size:11px;
+  margin-top:8px;
+}
+.wt-note{
+  color:var(--wt-text-dim);
+  font-size:11px;
+  line-height:1.55;
+}
+
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-thumb{background:#ffffff22;border-radius:99px}
 
@@ -402,6 +428,13 @@ const css=`
     width:calc(100vw - 22px);
   }
   #wt-box{border-radius:18px 18px 0 0}
+}
+
+@media print{
+  #wt-app,
+  #wt-modal{
+    display:none!important;
+  }
 }
 `;
 
@@ -464,6 +497,20 @@ const modal=(title,html)=>{
   m.addEventListener('click',e=>{
     if(e.target===m)m.remove();
   });
+
+  return m;
+};
+
+const setModalStatus=(m,status,progress)=>{
+  if(!m)return;
+
+  const statusEl=m.querySelector('[data-wt-status]');
+  const bar=m.querySelector('[data-wt-progress]');
+
+  if(statusEl)statusEl.textContent=status;
+  if(bar&&typeof progress==='number'){
+    bar.style.width=Math.max(0,Math.min(100,progress))+'%';
+  }
 };
 
 const copy=async text=>{
@@ -471,7 +518,19 @@ const copy=async text=>{
     await navigator.clipboard.writeText(text);
     return true;
   }catch{
-    return false;
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=text;
+      ta.style.position='fixed';
+      ta.style.opacity='0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok=document.execCommand('copy');
+      ta.remove();
+      return ok;
+    }catch{
+      return false;
+    }
   }
 };
 
@@ -521,6 +580,10 @@ const bindCopies=()=>{
   });
 };
 
+/* =========================================================
+   PAGE OVERVIEW
+   ========================================================= */
+
 addTool(
   'overview','Page Overview',
   'Title, URL, domain and document statistics',
@@ -531,7 +594,7 @@ addTool(
       ['Domain',esc(location.hostname)],
       ['Protocol',esc(location.protocol)],
       ['Path',esc(location.pathname)],
-      ['Referrer',esc(document.referrer||'(none)')],
+      ['Referrer',esc(document.referrer||'(none)')]
     ];
 
     modal(
@@ -549,6 +612,990 @@ addTool(
     bindCopies();
   }
 );
+
+/* =========================================================
+   FRONTEND ZIP EXPORT
+   ========================================================= */
+
+const loadScriptOnce=(src)=>{
+  return new Promise((resolve,reject)=>{
+    const existing=[...document.scripts].find(s=>s.src===src);
+
+    if(existing){
+      if(window.JSZip){
+        resolve(window.JSZip);
+        return;
+      }
+
+      existing.addEventListener('load',()=>resolve(window.JSZip),{once:true});
+      existing.addEventListener('error',()=>reject(new Error('ZIP library could not be loaded.')),{once:true});
+      return;
+    }
+
+    const s=document.createElement('script');
+    s.src=src;
+    s.async=true;
+    s.onload=()=>{
+      if(window.JSZip)resolve(window.JSZip);
+      else reject(new Error('ZIP library loaded but was unavailable.'));
+    };
+    s.onerror=()=>reject(new Error('ZIP library could not be loaded.'));
+    document.head.appendChild(s);
+  });
+};
+
+/*
+ * Native ZIP fallback.
+ *
+ * This writes a valid ZIP using stored (uncompressed) entries.
+ * That keeps the exporter independent from third-party libraries if
+ * a site blocks dynamic script loading through CSP.
+ */
+const crcTable=(()=>{
+  const table=new Uint32Array(256);
+
+  for(let n=0;n<256;n++){
+    let c=n;
+
+    for(let k=0;k<8;k++){
+      c=(c&1)?(0xedb88320^(c>>>1)):(c>>>1);
+    }
+
+    table[n]=c>>>0;
+  }
+
+  return table;
+})();
+
+const crc32=data=>{
+  let c=0xffffffff;
+
+  for(let i=0;i<data.length;i++){
+    c=crcTable[(c^data[i])&0xff]^(c>>>8);
+  }
+
+  return (c^0xffffffff)>>>0;
+};
+
+const u16=(n)=>{
+  const a=new Uint8Array(2);
+  const v=new DataView(a.buffer);
+  v.setUint16(0,n,true);
+  return a;
+};
+
+const u32=(n)=>{
+  const a=new Uint8Array(4);
+  const v=new DataView(a.buffer);
+  v.setUint32(0,n>>>0,true);
+  return a;
+};
+
+const concatBytes=parts=>{
+  let total=0;
+
+  for(const p of parts)total+=p.length;
+
+  const out=new Uint8Array(total);
+  let offset=0;
+
+  for(const p of parts){
+    out.set(p,offset);
+    offset+=p.length;
+  }
+
+  return out;
+};
+
+const makeStoredZip=entries=>{
+  const enc=new TextEncoder();
+  const local=[];
+  const central=[];
+  let offset=0;
+
+  for(const entry of entries){
+    const nameBytes=enc.encode(entry.name);
+    const data=entry.data instanceof Uint8Array
+      ?entry.data
+      :new Uint8Array(entry.data);
+
+    const crc=crc32(data);
+
+    const localHeader=concatBytes([
+      u32(0x04034b50),
+      u16(20),
+      u16(0x0800),
+      u16(0),
+      u16(0),
+      u16(0),
+      u32(crc),
+      u32(data.length),
+      u32(data.length),
+      u16(nameBytes.length),
+      u16(0),
+      nameBytes
+    ]);
+
+    local.push(localHeader,data);
+
+    const centralHeader=concatBytes([
+      u32(0x02014b50),
+      u16(20),
+      u16(20),
+      u16(0x0800),
+      u16(0),
+      u16(0),
+      u16(0),
+      u32(crc),
+      u32(data.length),
+      u32(data.length),
+      u16(nameBytes.length),
+      u16(0),
+      u16(0),
+      u16(0),
+      u16(0),
+      u32(0),
+      u32(offset),
+      nameBytes
+    ]);
+
+    central.push(centralHeader);
+
+    offset+=localHeader.length+data.length;
+  }
+
+  const centralBytes=concatBytes(central);
+  const localBytes=concatBytes(local);
+
+  const end=concatBytes([
+    u32(0x06054b50),
+    u16(0),
+    u16(0),
+    u16(entries.length),
+    u16(entries.length),
+    u32(centralBytes.length),
+    u32(localBytes.length),
+    u16(0)
+  ]);
+
+  return new Blob([localBytes,centralBytes,end],{type:'application/zip'});
+};
+
+const safeFileName=name=>{
+  return String(name||'file')
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g,'-')
+    .replace(/\s+/g,' ')
+    .trim()
+    .slice(0,180)||'file';
+};
+
+const resourceName=(url,fallback='resource')=>{
+  try{
+    const u=new URL(url,location.href);
+    let name=decodeURIComponent(u.pathname.split('/').pop()||fallback);
+    name=name.replace(/[?#].*$/,'');
+
+    if(!name||name==='.'||name==='..')name=fallback;
+
+    return safeFileName(name);
+  }catch{
+    return safeFileName(fallback);
+  }
+};
+
+const uniquePath=(path,used)=>{
+  const original=path;
+
+  if(!used.has(path)){
+    used.add(path);
+    return path;
+  }
+
+  const dot=path.lastIndexOf('.');
+  const base=dot>0?path.slice(0,dot):path;
+  const ext=dot>0?path.slice(dot):'';
+
+  let i=2;
+
+  while(used.has(`${base}-${i}${ext}`))i++;
+
+  path=`${base}-${i}${ext}`;
+  used.add(path);
+
+  return path;
+};
+
+const isFetchableURL=url=>{
+  try{
+    const u=new URL(url,location.href);
+
+    if(!/^https?:$/i.test(u.protocol)&&u.protocol!=='blob:'){
+      return false;
+    }
+
+    if(u.protocol==='blob:'){
+      return false;
+    }
+
+    return true;
+  }catch{
+    return false;
+  }
+};
+
+const fetchResource=async(url,timeout=12000)=>{
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeout);
+
+  try{
+    const response=await fetch(url,{
+      method:'GET',
+      credentials:'same-origin',
+      cache:'default',
+      signal:controller.signal
+    });
+
+    if(!response.ok){
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const type=response.type;
+
+    if(type==='opaque'){
+      throw new Error('Opaque response');
+    }
+
+    return {
+      url:response.url||url,
+      contentType:response.headers.get('content-type')||'',
+      buffer:await response.arrayBuffer()
+    };
+  }finally{
+    clearTimeout(timer);
+  }
+};
+
+const collectFrontendResources=()=>{
+  const list=[];
+  const seen=new Set();
+
+  const add=(url,type,element)=>{
+    if(!url)return;
+
+    try{
+      const u=new URL(url,location.href);
+
+      if(!/^https?:$/i.test(u.protocol))return;
+
+      const key=u.href;
+
+      if(seen.has(key))return;
+
+      seen.add(key);
+
+      list.push({
+        url:key,
+        type,
+        element
+      });
+    }catch{}
+  };
+
+  document.querySelectorAll('link[href]').forEach(el=>{
+    const rel=(el.getAttribute('rel')||'').toLowerCase();
+
+    if(
+      rel.includes('stylesheet')||
+      rel.includes('icon')||
+      rel.includes('manifest')||
+      rel.includes('preload')||
+      rel.includes('modulepreload')
+    ){
+      add(el.href,rel.includes('stylesheet')?'css':'asset',el);
+    }
+  });
+
+  document.querySelectorAll('script[src]').forEach(el=>{
+    add(el.src,'js',el);
+  });
+
+  document.querySelectorAll('img[src],source[src],video[src],audio[src],iframe[src]').forEach(el=>{
+    add(el.src,'asset',el);
+  });
+
+  document.querySelectorAll('[srcset]').forEach(el=>{
+    const value=el.getAttribute('srcset')||'';
+
+    value.split(',').forEach(part=>{
+      const candidate=part.trim().split(/\s+/)[0];
+      if(candidate)add(candidate,'asset',el);
+    });
+  });
+
+  document.querySelectorAll('[poster]').forEach(el=>{
+    add(el.getAttribute('poster'),'asset',el);
+  });
+
+  document.querySelectorAll('link[href]').forEach(el=>{
+    const href=el.href;
+
+    if(href){
+      const lower=href.toLowerCase();
+
+      if(
+        /\.(woff2?|ttf|otf|eot|svg|png|jpe?g|gif|webp|avif|ico|mp4|webm|mp3|wav)(\?|#|$)/i.test(lower)
+      ){
+        add(href,'asset',el);
+      }
+    }
+  });
+
+  /*
+   * Performance entries provide additional browser-visible resources.
+   * Only fetchable HTTP(S) resources are considered.
+   */
+  try{
+    performance.getEntriesByType('resource').forEach(entry=>{
+      const name=entry&&entry.name;
+
+      if(!name)return;
+
+      const type=entry.initiatorType==='script'
+        ?'js'
+        :entry.initiatorType==='css'
+          ?'css'
+          :'asset';
+
+      add(name,type,null);
+    });
+  }catch{}
+
+  return list;
+};
+
+const sanitizeExportDocument=()=>{
+  const clone=document.documentElement.cloneNode(true);
+
+  /*
+   * Never export the Web Tools UI itself.
+   */
+  clone.querySelectorAll('#wt-app,#wt-modal,#wt-style').forEach(el=>el.remove());
+
+  /*
+   * Do not export live form values. This prevents passwords, entered
+   * credentials, search terms, payment details and other user input
+   * from being silently placed into the ZIP.
+   */
+  clone.querySelectorAll('input,textarea,select').forEach(el=>{
+    try{
+      if(el.tagName==='INPUT'){
+        const type=(el.getAttribute('type')||'').toLowerCase();
+
+        if(type==='checkbox'||type==='radio'){
+          el.removeAttribute('checked');
+        }else{
+          el.removeAttribute('value');
+        }
+      }else if(el.tagName==='TEXTAREA'){
+        el.textContent='';
+      }else if(el.tagName==='SELECT'){
+        el.querySelectorAll('option').forEach(option=>{
+          option.removeAttribute('selected');
+        });
+      }
+    }catch{}
+  });
+
+  return clone;
+};
+
+const pathForResource=(resource,used)=>{
+  const name=resourceName(resource.url,'resource');
+
+  let folder='assets';
+
+  if(resource.type==='css')folder='css';
+  if(resource.type==='js')folder='js';
+
+  return uniquePath(`${folder}/${name}`,used);
+};
+
+const rewriteHTMLResourceReferences=(doc,mapping)=>{
+  const rewrite=url=>{
+    try{
+      const absolute=new URL(url,location.href).href;
+      return mapping.get(absolute)||url;
+    }catch{
+      return url;
+    }
+  };
+
+  doc.querySelectorAll('link[href]').forEach(el=>{
+    const original=el.getAttribute('href');
+
+    if(!original)return;
+
+    const replaced=rewrite(original);
+
+    if(replaced!==original){
+      el.setAttribute('href',replaced);
+    }
+  });
+
+  doc.querySelectorAll('script[src]').forEach(el=>{
+    const original=el.getAttribute('src');
+
+    if(!original)return;
+
+    const replaced=rewrite(original);
+
+    if(replaced!==original){
+      el.setAttribute('src',replaced);
+    }
+  });
+
+  doc.querySelectorAll('img[src],source[src],video[src],audio[src],iframe[src]').forEach(el=>{
+    const attr='src';
+    const original=el.getAttribute(attr);
+
+    if(!original)return;
+
+    const replaced=rewrite(original);
+
+    if(replaced!==original){
+      el.setAttribute(attr,replaced);
+    }
+  });
+
+  doc.querySelectorAll('[poster]').forEach(el=>{
+    const original=el.getAttribute('poster');
+
+    if(!original)return;
+
+    const replaced=rewrite(original);
+
+    if(replaced!==original){
+      el.setAttribute('poster',replaced);
+    }
+  });
+
+  doc.querySelectorAll('[srcset]').forEach(el=>{
+    const original=el.getAttribute('srcset')||'';
+
+    const replaced=original.split(',').map(part=>{
+      const bits=part.trim().split(/\s+/);
+
+      if(!bits[0])return part;
+
+      bits[0]=rewrite(bits[0]);
+
+      return bits.join(' ');
+    }).join(', ');
+
+    el.setAttribute('srcset',replaced);
+  });
+};
+
+const rewriteCSSReferences=(cssText,cssURL,mapping)=>{
+  return cssText.replace(
+    /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi,
+    (full,quote,value)=>{
+      const raw=value.trim();
+
+      if(
+        !raw||
+        raw.startsWith('data:')||
+        raw.startsWith('#')||
+        raw.startsWith('blob:')
+      ){
+        return full;
+      }
+
+      try{
+        const absolute=new URL(raw,cssURL).href;
+        const mapped=mapping.get(absolute);
+
+        if(mapped){
+          return `url("${mapped}")`;
+        }
+      }catch{}
+
+      return full;
+    }
+  );
+};
+
+const makeTextBytes=text=>new TextEncoder().encode(text);
+
+const downloadBlob=(blob,name)=>{
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+
+  a.href=url;
+  a.download=name;
+  a.rel='noopener';
+  a.style.display='none';
+
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  setTimeout(()=>URL.revokeObjectURL(url),30000);
+};
+
+const createZipWithJSZip=async(JSZip,entries)=>{
+  const zip=new JSZip();
+
+  for(const entry of entries){
+    zip.file(entry.name,entry.data);
+  }
+
+  return zip.generateAsync({
+    type:'blob',
+    compression:'DEFLATE',
+    compressionOptions:{level:6}
+  });
+};
+
+const exportFrontendZIP=async()=>{
+  const filename=`${safeFileName(location.hostname||'page')}-frontend.zip`;
+
+  const progressModal=modal(
+    'Download Frontend ZIP',
+    `<div class="wt-card">
+      <div class="wt-label">Status</div>
+      <div class="wt-value" data-wt-status>Preparing frontend...</div>
+      <div class="wt-progress">
+        <div class="wt-progress-bar" data-wt-progress></div>
+      </div>
+      <div class="wt-status">
+        The export contains the currently loaded frontend and browser-accessible resources.
+      </div>
+    </div>`
+  );
+
+  let skipped=0;
+  let completed=0;
+
+  try{
+    const used=new Set();
+    const mapping=new Map();
+    const resourceResults=[];
+
+    setModalStatus(progressModal,'Preparing frontend...',5);
+
+    const exportDocument=sanitizeExportDocument();
+
+    setModalStatus(progressModal,'Collecting resources...',12);
+
+    const resources=collectFrontendResources();
+
+    /*
+     * Only resources actually discovered from the current page are considered.
+     * Nothing is guessed from server directories.
+     */
+    for(let i=0;i<resources.length;i++){
+      const resource=resources[i];
+
+      try{
+        if(!isFetchableURL(resource.url)){
+          skipped++;
+          continue;
+        }
+
+        /*
+         * The exporter intentionally avoids automatically fetching
+         * cross-origin resources. Browser CORS rules can otherwise make
+         * behavior inconsistent and may expose authenticated content.
+         */
+        const resourceURL=new URL(resource.url);
+
+        if(resourceURL.origin!==location.origin){
+          skipped++;
+          continue;
+        }
+
+        const path=pathForResource(resource,used);
+
+        resourceResults.push({
+          resource,
+          path
+        });
+
+        mapping.set(resourceURL.href,path);
+      }catch{
+        skipped++;
+      }
+    }
+
+    const entries=[];
+
+    /*
+     * Fetching is deliberately fault-tolerant: each resource has its own
+     * try/catch so a single failure cannot abort the export.
+     */
+    for(const item of resourceResults){
+      const resource=item.resource;
+
+      try{
+        const fetched=await fetchResource(resource.url);
+
+        let data=new Uint8Array(fetched.buffer);
+
+        /*
+         * CSS references are rewritten after the resource map is known.
+         * This keeps local exported CSS assets useful when possible.
+         */
+        if(resource.type==='css'){
+          const text=new TextDecoder().decode(data);
+          const rewritten=rewriteCSSReferences(
+            text,
+            resource.url,
+            mapping
+          );
+
+          data=makeTextBytes(rewritten);
+        }
+
+        entries.push({
+          name:item.path,
+          data
+        });
+      }catch{
+        skipped++;
+      }
+
+      completed++;
+
+      const progress=15+
+        Math.round((completed/Math.max(resourceResults.length,1))*55);
+
+      setModalStatus(
+        progressModal,
+        `Collecting resources... ${completed}/${resourceResults.length}`,
+        progress
+      );
+    }
+
+    setModalStatus(progressModal,'Building ZIP...',75);
+
+    rewriteHTMLResourceReferences(exportDocument,mapping);
+
+    /*
+     * Serialize only the sanitized current DOM.
+     * No cookies, storage values or live form values are included.
+     */
+    const html='<!DOCTYPE html>\n'+exportDocument.outerHTML;
+
+    entries.unshift({
+      name:'index.html',
+      data:makeTextBytes(html)
+    });
+
+    let zipBlob;
+
+    /*
+     * Prefer JSZip when it is already available or can be loaded.
+     * Failure falls back to the built-in valid ZIP writer.
+     */
+    try{
+      let JSZip=window.JSZip;
+
+      if(!JSZip){
+        try{
+          JSZip=await loadScriptOnce(
+            'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'
+          );
+        }catch{
+          JSZip=null;
+        }
+      }
+
+      if(JSZip){
+        zipBlob=await createZipWithJSZip(JSZip,entries);
+      }else{
+        zipBlob=makeStoredZip(entries);
+      }
+    }catch{
+      zipBlob=makeStoredZip(entries);
+    }
+
+    setModalStatus(progressModal,'Downloading...',95);
+
+    downloadBlob(zipBlob,filename);
+
+    setModalStatus(
+      progressModal,
+      skipped
+        ? `Export completed with ${skipped} inaccessible resources skipped.`
+        : 'Export completed successfully.',
+      100
+    );
+
+    const content=progressModal.querySelector('#wt-content');
+
+    if(content){
+      content.insertAdjacentHTML(
+        'beforeend',
+        `<div class="wt-card">
+          <div class="wt-label">Exported</div>
+          <div class="wt-value">${esc(filename)}</div>
+        </div>
+        <div class="wt-card">
+          <div class="wt-label">Privacy</div>
+          <div class="wt-note">
+            Cookies, localStorage, sessionStorage, authorization headers,
+            browser credentials and live form values were not included.
+            Backend/server-side source is not accessible through this export.
+          </div>
+        </div>`
+      );
+    }
+  }catch(e){
+    const message=e&&e.message
+      ?e.message
+      :'The frontend export could not be completed.';
+
+    const content=progressModal.querySelector('#wt-content');
+
+    if(content){
+      content.innerHTML=`
+        <div class="wt-card">
+          <div class="wt-label">Export failed</div>
+          <div class="wt-value">
+            ${esc(message)}
+          </div>
+        </div>
+        <div class="wt-card">
+          <div class="wt-note">
+            The page itself was not modified. Browser security restrictions
+            can prevent individual resources from being retrieved.
+          </div>
+        </div>
+      `;
+    }
+  }
+};
+
+addTool(
+  'download','Download Frontend ZIP',
+  'Export the loaded frontend HTML, CSS, JS and accessible assets',
+  ()=>{
+    exportFrontendZIP();
+  }
+);
+
+/* =========================================================
+   PAGE PDF
+   ========================================================= */
+
+const downloadPagePDF=()=>{
+  const printStyle=document.createElement('style');
+  printStyle.id='wt-print-temp';
+
+  printStyle.textContent=`
+    @media print{
+      #wt-app,
+      #wt-modal,
+      #wt-style,
+      [data-wt-print-hide]{
+        display:none!important;
+      }
+
+      html,body{
+        background:#fff!important;
+      }
+    }
+  `;
+
+  let restored=false;
+
+  const cleanup=()=>{
+    if(restored)return;
+
+    restored=true;
+
+    try{
+      printStyle.remove();
+    }catch{}
+
+    try{
+      window.removeEventListener('afterprint',cleanup);
+    }catch{}
+  };
+
+  try{
+    document.head.appendChild(printStyle);
+
+    root.style.display='none';
+
+    const currentModal=document.getElementById('wt-modal');
+
+    if(currentModal){
+      currentModal.style.display='none';
+    }
+
+    window.addEventListener('afterprint',cleanup,{once:true});
+
+    /*
+     * This is intentionally a print-to-PDF flow rather than a fake
+     * automatic PDF download. The browser controls the actual PDF
+     * destination and print dialog.
+     */
+    window.print();
+
+    /*
+     * Some browsers do not reliably fire afterprint for every print
+     * implementation. Give the event time to run, with a long safety
+     * fallback rather than immediately restoring the UI.
+     */
+    setTimeout(cleanup,60000);
+  }catch{
+    cleanup();
+    root.style.display='';
+
+    const currentModal=document.getElementById('wt-modal');
+
+    if(currentModal){
+      currentModal.style.display='';
+    }
+
+    modal(
+      'Download Page as PDF',
+      `<div class="wt-card">
+        <div class="wt-label">Print unavailable</div>
+        <div class="wt-value">
+          This browser did not allow the print-to-PDF flow to start.
+        </div>
+      </div>`
+    );
+  }
+};
+
+addTool(
+  'pdf','Download Page as PDF',
+  'Save the current rendered page as a PDF',
+  ()=>{
+    /*
+     * Native browser printing is the most reliable option available
+     * from an injected script. The browser's print dialog may ask the
+     * user to select "Save as PDF".
+     */
+    downloadPagePDF();
+  }
+);
+
+/* =========================================================
+   DOM INSPECTOR
+   ========================================================= */
+
+addTool(
+  'inspector','DOM Inspector',
+  'Tap an element to inspect basic DOM information',
+  ()=>{
+    let active=true;
+
+    const oldStyle=document.getElementById('wt-inspector-style');
+    if(oldStyle)oldStyle.remove();
+
+    const st=document.createElement('style');
+    st.id='wt-inspector-style';
+    st.textContent='[data-wt-highlight]{outline:3px solid #6f93f2!important;outline-offset:2px!important;cursor:crosshair!important}';
+    document.head.appendChild(st);
+
+    const over=e=>{
+      if(!active||root.contains(e.target)||e.target.closest('#wt-modal'))return;
+
+      try{
+        e.target.setAttribute('data-wt-highlight','');
+      }catch{}
+    };
+
+    const out=e=>{
+      try{
+        e.target.removeAttribute('data-wt-highlight');
+      }catch{}
+    };
+
+    const click=e=>{
+      if(!active||root.contains(e.target)||e.target.closest('#wt-modal'))return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const el=e.target;
+
+      modal(
+        'Element',
+        card('Tag',esc(el.tagName))+
+        card('ID',esc(el.id||'(none)'))+
+        card('Classes',esc(typeof el.className==='string'?el.className:'(none)'))+
+        card('Text',esc((el.innerText||'').trim().slice(0,2000)))
+      );
+
+      bindCopies();
+    };
+
+    document.addEventListener('mouseover',over,true);
+    document.addEventListener('mouseout',out,true);
+    document.addEventListener('click',click,true);
+
+    alert('Inspector enabled for 30 seconds. Tap an element.');
+
+    setTimeout(()=>{
+      active=false;
+
+      document.removeEventListener('mouseover',over,true);
+      document.removeEventListener('mouseout',out,true);
+      document.removeEventListener('click',click,true);
+
+      try{
+        document.querySelectorAll('[data-wt-highlight]').forEach(el=>{
+          el.removeAttribute('data-wt-highlight');
+        });
+      }catch{}
+
+      st.remove();
+    },30000);
+  }
+);
+
+/* =========================================================
+   PAGE SOURCE
+   ========================================================= */
+
+addTool(
+  'source','Page Source',
+  'Open the current document HTML in a readable viewer',
+  ()=>{
+    modal(
+      'Document HTML',
+      `<div class="wt-card">
+        <button class="wt-copy" data-copy="${esc(document.documentElement.outerHTML)}">Copy HTML</button>
+        <pre style="white-space:pre-wrap;word-break:break-word;color:#cdd3dd;font-size:11px;line-height:1.5">${esc(document.documentElement.outerHTML)}</pre>
+      </div>`
+    );
+
+    bindCopies();
+  }
+);
+
+/* =========================================================
+   COPY PAGE TEXT
+   ========================================================= */
+
+addTool(
+  'copy','Copy Page Text',
+  'Copy visible page text to clipboard',
+  async()=>{
+    const ok=await copy(document.body.innerText||'');
+    alert(ok?'Visible page text copied.':'Clipboard permission denied.');
+  }
+);
+
+/* =========================================================
+   LINKS
+   ========================================================= */
 
 addTool(
   'links','Links',
@@ -573,6 +1620,10 @@ addTool(
   }
 );
 
+/* =========================================================
+   IMAGES
+   ========================================================= */
+
 addTool(
   'images','Images',
   'View images with clickable source URLs',
@@ -595,6 +1646,10 @@ addTool(
     );
   }
 );
+
+/* =========================================================
+   FORMS
+   ========================================================= */
 
 addTool(
   'forms','Forms',
@@ -630,6 +1685,10 @@ addTool(
   }
 );
 
+/* =========================================================
+   HEADINGS
+   ========================================================= */
+
 addTool(
   'headings','Headings',
   'View document heading structure',
@@ -650,115 +1709,35 @@ addTool(
   }
 );
 
-addTool(
-  'inspector','DOM Inspector',
-  'Tap an element to inspect basic DOM information',
-  ()=>{
-    let active=true;
-
-    const st=document.createElement('style');
-    st.id='wt-inspector-style';
-    st.textContent='[data-wt-highlight]{outline:3px solid #6f93f2!important;outline-offset:2px!important;cursor:crosshair!important}';
-    document.head.appendChild(st);
-
-    const over=e=>{
-      if(!active||root.contains(e.target)||e.target.closest('#wt-modal'))return;
-      e.target.setAttribute('data-wt-highlight','');
-    };
-
-    const out=e=>{
-      e.target.removeAttribute('data-wt-highlight');
-    };
-
-    const click=e=>{
-      if(!active||root.contains(e.target)||e.target.closest('#wt-modal'))return;
-
-      e.preventDefault();
-      e.stopPropagation();
-
-      const el=e.target;
-
-      modal(
-        'Element',
-        card('Tag',esc(el.tagName))+
-        card('ID',esc(el.id||'(none)'))+
-        card('Classes',esc(typeof el.className==='string'?el.className:'(none)'))+
-        card('Text',esc((el.innerText||'').trim().slice(0,2000)))
-      );
-
-      bindCopies();
-    };
-
-    document.addEventListener('mouseover',over,true);
-    document.addEventListener('mouseout',out,true);
-    document.addEventListener('click',click,true);
-
-    alert('Inspector enabled for 30 seconds. Tap an element.');
-
-    setTimeout(()=>{
-      active=false;
-      document.removeEventListener('mouseover',over,true);
-      document.removeEventListener('mouseout',out,true);
-      document.removeEventListener('click',click,true);
-      st.remove();
-    },30000);
-  }
-);
-
-const storageViewer=(name,store)=>{
-  let rows=[];
-
-  try{
-    for(let i=0;i<store.length;i++){
-      const key=store.key(i);
-      rows.push([key,store.getItem(key)]);
-    }
-  }catch(e){
-    modal(name,`<div class="wt-card">${esc(e.message)}</div>`);
-    return;
-  }
-
-  modal(
-    name,
-    rows.length
-    ? rows.map((r,i)=>`
-      <div class="wt-card">
-        <button class="wt-copy" data-copy="${esc(r[1])}">Copy</button>
-        <div class="wt-label">${esc(r[0])}</div>
-        <div class="wt-value">${esc(r[1])}</div>
-      </div>
-    `).join('')
-    : empty('Storage is empty.')
-  );
-
-  bindCopies();
-};
-
-addTool('localStorage','Local Storage','View current site localStorage keys and values',()=>storageViewer('Local Storage',localStorage));
-addTool('sessionStorage','Session Storage','View current site sessionStorage keys and values',()=>storageViewer('Session Storage',sessionStorage));
+/* =========================================================
+   SCRIPTS
+   ========================================================= */
 
 addTool(
-  'performance','Performance',
-  'Navigation timing and page load metrics',
+  'scripts','Scripts',
+  'List JavaScript files used by the page',
   ()=>{
-    const p=performance.getEntriesByType('navigation')[0];
-
-    if(!p){
-      modal('Performance',empty('Navigation timing unavailable.'));
-      return;
-    }
+    const data=[...document.scripts];
 
     modal(
-      'Performance',
-      `<div class="wt-stat-grid">
-        <div class="wt-stat"><div class="wt-stat-num">${p.domainLookupEnd-p.domainLookupStart|0}<span style="font-size:11px"> ms</span></div><div class="wt-stat-label">DNS</div></div>
-        <div class="wt-stat"><div class="wt-stat-num">${p.responseEnd-p.responseStart|0}<span style="font-size:11px"> ms</span></div><div class="wt-stat-label">Response</div></div>
-        <div class="wt-stat"><div class="wt-stat-num">${p.domInteractive|0}<span style="font-size:11px"> ms</span></div><div class="wt-stat-label">DOM Interactive</div></div>
-        <div class="wt-stat"><div class="wt-stat-num">${p.domComplete|0}<span style="font-size:11px"> ms</span></div><div class="wt-stat-label">DOM Complete</div></div>
-      </div>`
+      'Scripts',
+      data.length
+      ? data.map((s,i)=>`
+        <div class="wt-card">
+          <div class="wt-label">Script ${i+1}</div>
+          <div class="wt-value">
+            ${s.src?urlHTML(s.src):'(inline script)'}
+          </div>
+        </div>
+      `).join('')
+      : empty('No scripts found.')
     );
   }
 );
+
+/* =========================================================
+   RESOURCES
+   ========================================================= */
 
 addTool(
   'resources','Resources',
@@ -784,6 +1763,88 @@ addTool(
   }
 );
 
+/* =========================================================
+   PERFORMANCE
+   ========================================================= */
+
+addTool(
+  'performance','Performance',
+  'Navigation timing and page load metrics',
+  ()=>{
+    const p=performance.getEntriesByType('navigation')[0];
+
+    if(!p){
+      modal('Performance',empty('Navigation timing unavailable.'));
+      return;
+    }
+
+    modal(
+      'Performance',
+      `<div class="wt-stat-grid">
+        <div class="wt-stat"><div class="wt-stat-num">${p.domainLookupEnd-p.domainLookupStart|0}<span style="font-size:11px"> ms</span></div><div class="wt-stat-label">DNS</div></div>
+        <div class="wt-stat"><div class="wt-stat-num">${p.responseEnd-p.responseStart|0}<span style="font-size:11px"> ms</span></div><div class="wt-stat-label">Response</div></div>
+        <div class="wt-stat"><div class="wt-stat-num">${p.domInteractive|0}<span style="font-size:11px"> ms</span></div><div class="wt-stat-label">DOM Interactive</div></div>
+        <div class="wt-stat"><div class="wt-stat-num">${p.domComplete|0}<span style="font-size:11px"> ms</span></div><div class="wt-stat-label">DOM Complete</div></div>
+      </div>`
+    );
+  }
+);
+
+/* =========================================================
+   LOCAL STORAGE
+   ========================================================= */
+
+const storageViewer=(name,store)=>{
+  let rows=[];
+
+  try{
+    for(let i=0;i<store.length;i++){
+      const key=store.key(i);
+      rows.push([key,store.getItem(key)]);
+    }
+  }catch(e){
+    modal(name,`<div class="wt-card">${esc(e.message)}</div>`);
+    return;
+  }
+
+  modal(
+    name,
+    rows.length
+    ? rows.map(r=>`
+      <div class="wt-card">
+        <button class="wt-copy" data-copy="${esc(r[1])}">Copy</button>
+        <div class="wt-label">${esc(r[0])}</div>
+        <div class="wt-value">${esc(r[1])}</div>
+      </div>
+    `).join('')
+    : empty('Storage is empty.')
+  );
+
+  bindCopies();
+};
+
+addTool(
+  'localStorage',
+  'Local Storage',
+  'View current site localStorage keys and values',
+  ()=>storageViewer('Local Storage',localStorage)
+);
+
+/* =========================================================
+   SESSION STORAGE
+   ========================================================= */
+
+addTool(
+  'sessionStorage',
+  'Session Storage',
+  'View current site sessionStorage keys and values',
+  ()=>storageViewer('Session Storage',sessionStorage)
+);
+
+/* =========================================================
+   COOKIES
+   ========================================================= */
+
 addTool(
   'cookies','Cookies',
   'Show cookie access status without exposing cookie values',
@@ -799,51 +1860,9 @@ addTool(
   }
 );
 
-addTool(
-  'copy','Copy Page Text',
-  'Copy visible page text to clipboard',
-  async()=>{
-    const ok=await copy(document.body.innerText||'');
-    alert(ok?'Visible page text copied.':'Clipboard permission denied.');
-  }
-);
-
-addTool(
-  'source','Page Source',
-  'Open the current document HTML in a readable viewer',
-  ()=>{
-    modal(
-      'Document HTML',
-      `<div class="wt-card">
-        <button class="wt-copy" data-copy="${esc(document.documentElement.outerHTML)}">Copy HTML</button>
-        <pre style="white-space:pre-wrap;word-break:break-word;color:#cdd3dd;font-size:11px;line-height:1.5">${esc(document.documentElement.outerHTML)}</pre>
-      </div>`
-    );
-    bindCopies();
-  }
-);
-
-addTool(
-  'scripts','Scripts',
-  'List JavaScript files used by the page',
-  ()=>{
-    const data=[...document.scripts];
-
-    modal(
-      'Scripts',
-      data.length
-      ? data.map((s,i)=>`
-        <div class="wt-card">
-          <div class="wt-label">Script ${i+1}</div>
-          <div class="wt-value">
-            ${s.src?urlHTML(s.src):'(inline script)'}
-          </div>
-        </div>
-      `).join('')
-      : empty('No scripts found.')
-    );
-  }
-);
+/* =========================================================
+   SEARCH
+   ========================================================= */
 
 search.oninput=()=>{
   const q=search.value.toLowerCase().trim();
@@ -853,8 +1872,15 @@ search.oninput=()=>{
   });
 };
 
+/* =========================================================
+   LAUNCHER / CLOSE
+   ========================================================= */
+
 root.querySelector('#wt-launch').onclick=()=>{
-  panel.style.display=panel.style.display==='none'||!panel.style.display?'block':'none';
+  panel.style.display=
+    panel.style.display==='none'||!panel.style.display
+      ?'block'
+      :'none';
 };
 
 root.querySelector('#wt-close').onclick=()=>{
@@ -862,3 +1888,4 @@ root.querySelector('#wt-close').onclick=()=>{
 };
 
 })();
+
